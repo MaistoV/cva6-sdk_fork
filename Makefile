@@ -16,12 +16,12 @@ NR_CORES := $(shell nproc)
 
 # SBI options
 PLATFORM := fpga/cheshire
-FW_FDT_PATH ?=
+FW_FDT_PATH ?= /usr/scratch/fenga3/vmaisto/cheshire_fork/target/xilinx/cheshire.dtb
 sbi-mk = PLATFORM=$(PLATFORM) CROSS_COMPILE=$(TOOLCHAIN_PREFIX) $(if $(FW_FDT_PATH),FW_FDT_PATH=$(FW_FDT_PATH),)
 ifeq ($(XLEN), 32)
 sbi-mk += PLATFORM_RISCV_ISA=rv32ima PLATFORM_RISCV_XLEN=32
 else
-sbi-mk += PLATFORM_RISCV_ISA=rv64imafdc PLATFORM_RISCV_XLEN=64
+sbi-mk += PLATFORM_RISCV_ISA=rv64imafdc_zifencei PLATFORM_RISCV_XLEN=64
 endif
 
 # U-Boot options
@@ -46,7 +46,10 @@ endif
 # default make flags
 isa-sim-mk              = -j$(NR_CORES)
 tests-mk         		= -j$(NR_CORES)
-buildroot-mk       		= -j$(NR_CORES)
+buildroot-mk       		= -j$(NR_CORES) \
+							HOSTCC=gcc-11.2.0 \
+							HOSTCXX=g++-11.2.0 \
+							HOSTCPP=cpp-11.2.0
 
 # linux image
 buildroot_defconfig = configs/buildroot$(XLEN)_defconfig
@@ -98,7 +101,7 @@ $(RISCV)/Image: $(RISCV)/vmlinux
 	$(OBJCOPY) -O binary -R .note -R .comment -S $< $@
 
 $(RISCV)/Image.gz: $(RISCV)/Image
-	$(GZIP_BIN) -9 -k --force $< > $@
+	$(GZIP_BIN) -9 --force $< > $@
 
 # U-Boot-compatible Linux image
 $(RISCV)/uImage: $(RISCV)/Image.gz $(MKIMAGE)
@@ -116,21 +119,56 @@ $(MKIMAGE) u-boot/u-boot.bin: $(CC)
 	make -C u-boot pulp-platform_cheshire_defconfig
 	make -C u-boot CROSS_COMPILE=$(TOOLCHAIN_PREFIX)
 
+# spl: u-boot/spl/u-boot.spl.bin
+# u-boot/spl/u-boot.spl.bin: $(CC)
+# 	make -C u-boot pulp-platform_cheshire_defconfig
+# 	make -C u-boot spl/u-boot-spl CROSS_COMPILE=$(TOOLCHAIN_PREFIX) CONFIG_SUPPORT_SPL=y
+
 # OpenSBI with u-boot as payload
 $(RISCV)/fw_payload.bin: $(RISCV)/u-boot.bin
+	make -C opensbi clean
 	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/fw_payload.elf
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/fw_payload.bin
 	# Also bring in dump
-	$(TOOLCHAIN_PREFIX)objdump -d -S  opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf > $(RISCV)/fw_payload.dump
+	$(TOOLCHAIN_PREFIX)objdump -D -S  opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf > $(RISCV)/fw_payload.dump
+# cp opensbi/build/platform/$(PLATFORM)/firmware/fw_jump.elf $(RISCV)/fw_jump.elf
+# cp opensbi/build/platform/$(PLATFORM)/firmware/fw_jump.bin $(RISCV)/fw_jump.bin
+# # Also bring in dump
+# $(TOOLCHAIN_PREFIX)objdump -D -S  opensbi/build/platform/$(PLATFORM)/firmware/fw_jump.elf > $(RISCV)/fw_jump.dump
 
 # OpenSBI for Spike with Linux as payload
 $(RISCV)/spike_fw_payload.elf: PLATFORM=generic
 $(RISCV)/spike_fw_payload.elf: $(RISCV)/Image
+	make -C opensbi clean
 	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/spike_fw_payload.elf
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/spike_fw_payload.bin
+	$(TOOLCHAIN_PREFIX)objdump -d -S $(RISCV)/spike_fw_payload.elf > $(RISCV)/spike_fw_payload.dump
 
+# same as spike_fw_payload, but don't override PLATFORM
+# also include FDT in the binary for convenience 
+in_memory_fw_payload: $(RISCV)/in_memory_fw_payload.elf
+$(RISCV)/in_memory_fw_payload.elf: $(RISCV)/Image
+	make -C opensbi clean
+	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
+# cp opensbi/build/platform/$(PLATFORM)/firmware/fw_jump.elf $(RISCV)/in_memory_fw_jump.elf
+# cp opensbi/build/platform/$(PLATFORM)/firmware/fw_jump.bin $(RISCV)/in_memory_fw_jump.bin
+# $(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_jump.elf > $(RISCV)/in_memory_fw_jump.dump
+	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/in_memory_fw_payload.elf
+	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/in_memory_fw_payload.bin
+	$(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_payload.elf > $(RISCV)/in_memory_fw_payload.dump
+
+# # OpenSBI with helloworld as payload 
+# NOTE: needs to be build with buildroot 
+# hello_fw_payload: $(RISCV)/hello_fw_payload.elf
+# $(RISCV)/hello_fw_payload.elf: scratch/vmaisto/cheshire_fork/sw/tests/helloworld.dram.elf 
+# 	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
+# 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/hello_fw_payload.elf
+# 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/hello_fw_payload.bin
+# 	$(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/hello_fw_payload.elf > $(RISCV)/hello_fw_payload.dump
+
+	
 # need to run flash-sdcard with sudo -E, be careful to set the correct SDDEVICE
 DT_SECTORSTART 		:= 2048
 DT_SECTOREND   		:= 264191	# 2048 + 128M
