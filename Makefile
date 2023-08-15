@@ -80,7 +80,11 @@ $(CC): $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig)
 	make -C buildroot defconfig BR2_DEFCONFIG=../$(buildroot_defconfig)
 	make -C buildroot host-gcc-final $(buildroot-mk)
 
-all: $(CC) isa-sim
+all: $(CC) isa-sim patch_u-boot
+
+patch_u-boot:
+	patch u-boot/arch/riscv/Makefile configs/u-boot_arch_riscv_Makefile.patch
+	cp configs/u-boot_pulp-platform_cheshire_defconfig u-boot/configs/pulp-platform_cheshire_defconfig 
 
 # benchmark for the cache subsystem
 rootfs/cachetest.elf: $(CC)
