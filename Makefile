@@ -80,11 +80,18 @@ $(CC): $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig)
 	make -C buildroot defconfig BR2_DEFCONFIG=../$(buildroot_defconfig)
 	make -C buildroot host-gcc-final $(buildroot-mk)
 
-all: $(CC) isa-sim patch_u-boot
+# NOTE: Apply patches instead of forking and updating all submodules
+# TODO:	Align this properly before production (if ever)
+PATCH_SUBMODULES := patch_u-boot patch_opensbi
+
+all: $(CC) isa-sim $(PATCH_SUBMODULES)
 
 patch_u-boot:
 	patch u-boot/arch/riscv/Makefile configs/u-boot_arch_riscv_Makefile.patch
 	cp configs/u-boot_pulp-platform_cheshire_defconfig u-boot/configs/pulp-platform_cheshire_defconfig 
+
+patch_opensbi:
+	patch opensbi/platform/fpga/cheshire/config.mk configs/opensbi_platform_fpga_cheshire_config.mk.patch
 
 # benchmark for the cache subsystem
 rootfs/cachetest.elf: $(CC)
@@ -100,6 +107,7 @@ $(RISCV)/vmlinux: $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig)
 	mkdir -p $(RISCV)
 	make -C buildroot $(buildroot-mk)
 	cp buildroot/output/images/vmlinux $@
+	$(TOOLCHAIN_PREFIX)objdump -d -S $(RISCV)/vmlinux > $(RISCV)/vmlinux.dump
 
 $(RISCV)/Image: $(RISCV)/vmlinux
 	$(OBJCOPY) -O binary -R .note -R .comment -S $< $@
@@ -163,16 +171,6 @@ $(RISCV)/in_memory_fw_payload.elf: $(RISCV)/Image
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/in_memory_fw_payload.bin
 	$(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_payload.elf > $(RISCV)/in_memory_fw_payload.dump
 
-# # OpenSBI with helloworld as payload 
-# NOTE: needs to be build with buildroot 
-# hello_fw_payload: $(RISCV)/hello_fw_payload.elf
-# $(RISCV)/hello_fw_payload.elf: scratch/vmaisto/cheshire_fork/sw/tests/helloworld.dram.elf 
-# 	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
-# 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/hello_fw_payload.elf
-# 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/hello_fw_payload.bin
-# 	$(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/hello_fw_payload.elf > $(RISCV)/hello_fw_payload.dump
-
-	
 # need to run flash-sdcard with sudo -E, be careful to set the correct SDDEVICE
 DT_SECTORSTART 		:= 2048
 DT_SECTOREND   		:= 264191	# 2048 + 128M
@@ -205,7 +203,7 @@ images: $(CC) $(RISCV)/fw_payload.bin $(RISCV)/uImage
 
 clean:
 	rm -rf $(RISCV)/vmlinux cachetest/*.elf rootfs/tetris rootfs/cachetest.elf
-	rm -rf $(RISCV)/fw_payload.bin $(RISCV)/uImage $(RISCV)/Image.gz
+	rm -rf $(RISCV)/*_payload* $(RISCV)/*_jump* $(RISCV)/uImage $(RISCV)/Image.gz
 	make -C u-boot clean
 	make -C opensbi distclean
 
