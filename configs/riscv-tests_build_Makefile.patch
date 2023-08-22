@@ -1,0 +1,20 @@
+diff --git a/Makefile b/Makefile.new
+index 61d9a06..d4763e2 100644
+--- a/Makefile
++++ b/Makefile.new
+@@ -12,12 +12,12 @@ bmarkdir        := $(abs_top_src_dir)/benchmarks
+ isa_src_dir     := $(abs_top_src_dir)/isa
+ debug_src_dir   := $(abs_top_src_dir)/debug
+ 
+-all: benchmarks isa
++all: benchmarks #isa
+ 
+ install: all
+-	install -d $(instbasedir)/share/riscv-tests/isa
++	# install -d $(instbasedir)/share/riscv-tests/isa
+ 	install -d $(instbasedir)/share/riscv-tests/benchmarks
+-	install -p -m 644 `find isa -maxdepth 1 -type f` $(instbasedir)/share/riscv-tests/isa
++	# install -p -m 644 `find isa -maxdepth 1 -type f` $(instbasedir)/share/riscv-tests/isa
+ 	install -p -m 644 `find benchmarks -maxdepth 1 -type f` $(instbasedir)/share/riscv-tests/benchmarks
+ 
+ benchmarks:
