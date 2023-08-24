@@ -96,9 +96,10 @@ patch_riscv-tests:
 	cd riscv-tests; git apply ../configs/riscv-test.patch
 
 patch_u-boot:
-	patch u-boot/arch/riscv/Makefile configs/u-boot_arch_riscv_Makefile.patch
+	-cd u-boot; git apply ../configs/u-boot.patch
 
 patch_opensbi:
+# 	NOTE: this is only necessary for in_memory_boot
 	patch opensbi/platform/fpga/cheshire/config.mk configs/opensbi_platform_fpga_cheshire_config.mk.patch
 
 # benchmark for the cache subsystem
@@ -187,6 +188,8 @@ $(RISCV)/in_memory_fw_payload.elf: $(RISCV)/Image dtb
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/in_memory_fw_payload.bin
 	$(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_payload.elf > $(RISCV)/in_memory_fw_payload.dump
 
+spi_boot: fw_payload.bin uImage
+
 # This is just an utility target to workaround some wierd behaviour on the IIS machines
 dtb:
 	make -C ../cheshire_fork/ dtb
@@ -220,6 +223,9 @@ uImage: $(RISCV)/uImage
 spike_payload: $(RISCV)/spike_fw_payload.elf
 
 images: $(CC) $(RISCV)/fw_payload.bin $(RISCV)/uImage
+
+clean_spi_boot:
+	rm -rf $(RISCV)/*Image* $(RISCV)/vmlinux $(RISCV)/u-boot*
 
 clean_in_memory_fw_payload:
 	rm -rf $(RISCV)/*Image* $(RISCV)/vmlinux $(RISCV)/in_memory_fw_payload.*
