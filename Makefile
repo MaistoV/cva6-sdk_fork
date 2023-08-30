@@ -225,10 +225,12 @@ spike_payload: $(RISCV)/spike_fw_payload.elf
 images: $(CC) $(RISCV)/fw_payload.bin $(RISCV)/uImage
 
 clean_spi_boot:
+	make -C u-boot clean
+	make -C opensbi clean
 	rm -rf $(RISCV)/*Image* $(RISCV)/vmlinux $(RISCV)/u-boot*
 
 clean_in_memory_fw_payload:
-	rm -rf $(RISCV)/*Image* $(RISCV)/vmlinux $(RISCV)/in_memory_fw_payload.*
+	rm -rf $(RISCV)/Image* $(RISCV)/vmlinux $(RISCV)/in_memory_fw_payload.*
 
 clean_linux:
 	make -C buildroot linux-dirclean
