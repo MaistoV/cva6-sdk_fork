@@ -16,7 +16,7 @@ NR_CORES := $(shell nproc)
 
 # SBI options
 PLATFORM := fpga/cheshire
-FW_FDT_PATH ?= /usr/scratch/fenga3/vmaisto/cheshire_fork/target/xilinx/cheshire.dtb
+FW_FDT_PATH ?= /usr/scratch/fenga3/vmaisto/cheshire_fork/sw/boot/cheshire_vcu128.dtb
 sbi-mk = PLATFORM=$(PLATFORM) CROSS_COMPILE=$(TOOLCHAIN_PREFIX) $(if $(FW_FDT_PATH),FW_FDT_PATH=$(FW_FDT_PATH),)
 ifeq ($(XLEN), 32)
 sbi-mk += PLATFORM_RISCV_ISA=rv32ima PLATFORM_RISCV_XLEN=32
@@ -67,12 +67,15 @@ isa-sim: install-dir $(CC)
 	make install;\
 	cd $(ROOT)
 
-tests: install-dir $(CC)
+tests:# install-dir $(CC)
+	rm -rf install64/target/
+	make -C riscv-tests/benchmarks clean
 	mkdir -p riscv-tests/build
 	cd riscv-tests/build;\
 	autoconf;\
 	../configure $(tests-co);\
-	make $(tests-mk);\
+	patch Makefile ../../configs/riscv-tests_build_Makefile.patch; \
+	make benchmarks $(tests-mk);\
 	make install;\
 	cd $(ROOT)
 
@@ -82,28 +85,45 @@ $(CC): $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig)
 
 # NOTE: Apply patches instead of forking and updating all submodules
 # TODO:	Align this properly before production (if ever)
-PATCH_SUBMODULES := patch_u-boot patch_opensbi
+PATCH_SUBMODULES := patch_u-boot patch_opensbi patch_riscv-tests
 
-all: $(CC) isa-sim $(PATCH_SUBMODULES)
+all:  $(CC) isa-sim patch_submodules
+
+patch_submodules: $(PATCH_SUBMODULES)
+
+patch_riscv-tests:
+	cd riscv-tests/env/; git checkout master
+	-cd riscv-tests; git apply ../configs/riscv-test.patch
 
 patch_u-boot:
-	patch u-boot/arch/riscv/Makefile configs/u-boot_arch_riscv_Makefile.patch
-	cp configs/u-boot_pulp-platform_cheshire_defconfig u-boot/configs/pulp-platform_cheshire_defconfig 
+	-cd u-boot; git apply ../configs/u-boot.patch
 
 patch_opensbi:
-	patch opensbi/platform/fpga/cheshire/config.mk configs/opensbi_platform_fpga_cheshire_config.mk.patch
+# 	NOTE: this is only necessary for in_memory_boot
+	-patch opensbi/platform/fpga/cheshire/config.mk configs/opensbi_platform_fpga_cheshire_config.mk.patch
 
 # benchmark for the cache subsystem
 rootfs/cachetest.elf: $(CC)
 	cd ./cachetest/ && $(CC) cachetest.c -o cachetest.elf
 	cp ./cachetest/cachetest.elf $@
 
+# benchmark for the cache subsystem
+rootfs/hello.elf: hello/hello.c $(CC)
+	$(CC) $< -o $@
+
 # cool command-line tetris
 rootfs/tetris: $(CC)
 	cd ./vitetris/ && make clean && ./configure CC=$(CC) && make
 	cp ./vitetris/tetris $@
 
-$(RISCV)/vmlinux: $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig) $(CC) rootfs/cachetest.elf rootfs/tetris
+# TODO: add rv64uv from ara
+# NOTE: this submodule would actually need some update
+rootfs/riscv-tests/benchmarks: tests
+	mkdir -p $@
+	cp -r $(RISCV)/target/share/riscv-tests/benchmarks/*riscv $@
+	chmod +x $@/*
+
+$(RISCV)/vmlinux: $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig) $(CC) rootfs/cachetest.elf rootfs/tetris rootfs/riscv-tests/benchmarks rootfs/ara
 	mkdir -p $(RISCV)
 	make -C buildroot $(buildroot-mk)
 	cp buildroot/output/images/vmlinux $@
@@ -137,8 +157,7 @@ $(MKIMAGE) u-boot/u-boot.bin: $(CC)
 # 	make -C u-boot spl/u-boot-spl CROSS_COMPILE=$(TOOLCHAIN_PREFIX) CONFIG_SUPPORT_SPL=y
 
 # OpenSBI with u-boot as payload
-$(RISCV)/fw_payload.bin: $(RISCV)/u-boot.bin
-	make -C opensbi clean
+$(RISCV)/fw_payload.bin: $(RISCV)/u-boot.bin dtb
 	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/fw_payload.elf
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/fw_payload.bin
@@ -151,8 +170,7 @@ $(RISCV)/fw_payload.bin: $(RISCV)/u-boot.bin
 
 # OpenSBI for Spike with Linux as payload
 $(RISCV)/spike_fw_payload.elf: PLATFORM=generic
-$(RISCV)/spike_fw_payload.elf: $(RISCV)/Image
-	make -C opensbi clean
+$(RISCV)/spike_fw_payload.elf: $(RISCV)/Image dtb
 	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/spike_fw_payload.elf
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/spike_fw_payload.bin
@@ -161,8 +179,7 @@ $(RISCV)/spike_fw_payload.elf: $(RISCV)/Image
 # same as spike_fw_payload, but don't override PLATFORM
 # also include FDT in the binary for convenience 
 in_memory_fw_payload: $(RISCV)/in_memory_fw_payload.elf
-$(RISCV)/in_memory_fw_payload.elf: $(RISCV)/Image
-	make -C opensbi clean
+$(RISCV)/in_memory_fw_payload.elf: $(RISCV)/Image dtb
 	make -C opensbi FW_PAYLOAD_PATH=$< $(sbi-mk)
 # cp opensbi/build/platform/$(PLATFORM)/firmware/fw_jump.elf $(RISCV)/in_memory_fw_jump.elf
 # cp opensbi/build/platform/$(PLATFORM)/firmware/fw_jump.bin $(RISCV)/in_memory_fw_jump.bin
@@ -170,6 +187,12 @@ $(RISCV)/in_memory_fw_payload.elf: $(RISCV)/Image
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/in_memory_fw_payload.elf
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/in_memory_fw_payload.bin
 	$(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_payload.elf > $(RISCV)/in_memory_fw_payload.dump
+
+spi_boot: fw_payload.bin uImage
+
+# This is just an utility target to workaround some wierd behaviour on the IIS machines
+dtb:
+	cd ../cheshire_fork/; make dtb
 
 # need to run flash-sdcard with sudo -E, be careful to set the correct SDDEVICE
 DT_SECTORSTART 		:= 2048
@@ -200,6 +223,18 @@ uImage: $(RISCV)/uImage
 spike_payload: $(RISCV)/spike_fw_payload.elf
 
 images: $(CC) $(RISCV)/fw_payload.bin $(RISCV)/uImage
+
+clean_spi_boot:
+	make -C u-boot clean
+	make -C opensbi clean
+	rm -rf $(RISCV)/*Image* $(RISCV)/vmlinux $(RISCV)/u-boot*
+
+clean_in_memory_fw_payload:
+	rm -rf $(RISCV)/Image* $(RISCV)/vmlinux $(RISCV)/in_memory_fw_payload.*
+
+clean_linux:
+	make -C buildroot linux-dirclean
+	rm -rf $(RISCV)/*_payload* $(RISCV)/*_jump* $(RISCV)/uImage $(RISCV)/Image.gz $(RISCV)/vmlinux
 
 clean:
 	rm -rf $(RISCV)/vmlinux cachetest/*.elf rootfs/tetris rootfs/cachetest.elf
