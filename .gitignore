@@ -1,10 +1,16 @@
 install*
 build
 *.elf
+*.dump
+*.bin
 rootfs/tetris
+rootfs/riscv-tests
+rootfs/selftests
 
 riscv-gnu-toolchain/build
 riscv-fesvr/build
 riscv-isa-sim/build
 riscv-pk/build
 riscv-tests/build
+
+.vscode

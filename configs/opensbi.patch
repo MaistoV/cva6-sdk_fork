@@ -1,0 +1,40 @@
+diff --git a/include/sbi/riscv_encoding.h b/include/sbi/riscv_encoding.h
+index e1d0b46..ae82a77 100644
+--- a/include/sbi/riscv_encoding.h
++++ b/include/sbi/riscv_encoding.h
+@@ -25,7 +25,7 @@
+ #define MSTATUS_MPP			(_UL(3) << MSTATUS_MPP_SHIFT)
+ #define MSTATUS_FS			_UL(0x00006000)
+ #define MSTATUS_XS			_UL(0x00018000)
+-#define MSTATUS_VS			_UL(0x01800000)
++#define MSTATUS_VS			_UL(0x00000600)
+ #define MSTATUS_MPRV			_UL(0x00020000)
+ #define MSTATUS_SUM			_UL(0x00040000)
+ #define MSTATUS_MXR			_UL(0x00080000)
+diff --git a/platform/fpga/cheshire/config.mk b/platform/fpga/cheshire/config.mk
+index 2d4d086..cd51de6 100644
+--- a/platform/fpga/cheshire/config.mk
++++ b/platform/fpga/cheshire/config.mk
+@@ -20,8 +20,7 @@ ifeq ($(PLATFORM_RISCV_XLEN), 32)
+  # This needs to be 2MB aligned for 64-bit support
+  FW_JUMP_ADDR=0x80200000
+  endif
+-# TODO: this is a cancerous workaround; set this correctly, ideally built!
+-FW_JUMP_FDT_ADDR=0x80800000
++FW_JUMP_FDT_ADDR=0x90000000
+ 
+ # Firmware with payload configuration.
+ FW_PAYLOAD=y
+@@ -33,6 +32,9 @@ else
+ # This needs to be 2MB aligned for 64-bit support
+   FW_PAYLOAD_OFFSET=0x200000
+ endif
+-# TODO: this is a cancerous workaround; set this correctly, ideally built!
+-FW_PAYLOAD_FDT_ADDR=0x80800000
+-FW_PAYLOAD_ALIGN=0x1000
++FW_PAYLOAD_FDT_ADDR=0x90000000
++
++# From  If both FW_PAYLOAD_OFFSET and FW_PAYLOAD_ALIGN are defined, FW_PAYLOAD_OFFSET is used and FW_PAYLOAD_ALIGN is ignored.
++#  If both FW_PAYLOAD_OFFSET and FW_PAYLOAD_ALIGN are defined, FW_PAYLOAD_OFFSET is used and FW_PAYLOAD_ALIGN is ignored.
++# Therefore setting this is useless
++# FW_PAYLOAD_ALIGN=0x1000

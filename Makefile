@@ -85,11 +85,16 @@ $(CC): $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig)
 
 # NOTE: Apply patches instead of forking and updating all submodules
 # TODO:	Align this properly before production (if ever)
-PATCH_SUBMODULES := patch_u-boot patch_opensbi patch_riscv-tests
+SUBMODULES := u-boot opensbi riscv-tests
+PATCH_SUBMODULES := $(addprefix patch_, $(SUBMODULES))
 
 all:  $(CC) isa-sim patch_submodules
 
-patch_submodules: $(PATCH_SUBMODULES)
+patch_submodules: submodules_update $(PATCH_SUBMODULES)
+
+submodules_update:
+	rm -rf $(SUBMODULES)
+	git submodule update --init --recursive
 
 patch_riscv-tests:
 	cd riscv-tests/env/; git checkout master
@@ -99,8 +104,7 @@ patch_u-boot:
 	-cd u-boot; git apply ../configs/u-boot.patch
 
 patch_opensbi:
-# 	NOTE: this is only necessary for in_memory_boot
-	-patch opensbi/platform/fpga/cheshire/config.mk configs/opensbi_platform_fpga_cheshire_config.mk.patch
+	cd opensbi; git apply ../configs/opensbi.patch
 
 # benchmark for the cache subsystem
 rootfs/cachetest.elf: $(CC)
@@ -108,8 +112,9 @@ rootfs/cachetest.elf: $(CC)
 	cp ./cachetest/cachetest.elf $@
 
 # benchmark for the cache subsystem
-rootfs/hello.elf: hello/hello.c $(CC)
-	$(CC) $< -o $@
+rootfs/rvv_hello.elf: rvv_hello/rvv_hello.c $(CC)
+	$(CC) -g $< -march=rv64gcv -o $@
+	$(TOOLCHAIN_PREFIX)objdump -D -S $@ > rvv_hello/rvv_hello.dump
 
 # cool command-line tetris
 rootfs/tetris: $(CC)
@@ -123,7 +128,11 @@ rootfs/riscv-tests/benchmarks: tests
 	cp -r $(RISCV)/target/share/riscv-tests/benchmarks/*riscv $@
 	chmod +x $@/*
 
-$(RISCV)/vmlinux: $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig) $(CC) rootfs/cachetest.elf rootfs/tetris rootfs/riscv-tests/benchmarks rootfs/ara
+rootfs/ara:
+#	NOTE: this must be filled-in from the Ara repo
+	mkdir -p $@
+
+$(RISCV)/vmlinux: $(buildroot_defconfig) $(linux_defconfig) $(busybox_defconfig) $(CC) rootfs/rvv_hello.elf rootfs/cachetest.elf rootfs/tetris rootfs/riscv-tests/benchmarks rootfs/ara
 	mkdir -p $(RISCV)
 	make -C buildroot $(buildroot-mk)
 	cp buildroot/output/images/vmlinux $@
@@ -186,7 +195,8 @@ $(RISCV)/in_memory_fw_payload.elf: $(RISCV)/Image dtb
 # $(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_jump.elf > $(RISCV)/in_memory_fw_jump.dump
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.elf $(RISCV)/in_memory_fw_payload.elf
 	cp opensbi/build/platform/$(PLATFORM)/firmware/fw_payload.bin $(RISCV)/in_memory_fw_payload.bin
-	$(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_payload.elf > $(RISCV)/in_memory_fw_payload.dump
+# Not necessary, since it is just fw_jump + vmlinux dumps
+# $(TOOLCHAIN_PREFIX)objdump -D -S $(RISCV)/in_memory_fw_payload.elf > $(RISCV)/in_memory_fw_payload.dump
 
 spi_boot: fw_payload.bin uImage
 
@@ -230,6 +240,7 @@ clean_spi_boot:
 	rm -rf $(RISCV)/*Image* $(RISCV)/vmlinux $(RISCV)/u-boot*
 
 clean_in_memory_fw_payload:
+	make -C opensbi clean
 	rm -rf $(RISCV)/Image* $(RISCV)/vmlinux $(RISCV)/in_memory_fw_payload.*
 
 clean_linux:
